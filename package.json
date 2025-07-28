@@ -1,0 +1,53 @@
+{
+  "name": "trader-browser-block",
+  "version": "1.0.0",
+  "description": "Professional desktop application for managing trading platform access and impulse control",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "format": "prettier --write packages/*/src/**/*.{ts,tsx,json}",
+    "clean": "rimraf packages/*/dist packages/*/build",
+    "start-service": "cd packages/service && npx ts-node src/simple-service.ts",
+    "start-app": "cd packages/app && npm run dev:renderer",
+    "start-electron": "cd packages/app && npm run electron:dev",
+    "test-service": "curl http://localhost:3001/health"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "prettier": "^3.1.0",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trader/browser-block.git"
+  },
+  "keywords": [
+    "trading",
+    "risk-management",
+    "url-blocking",
+    "desktop-app",
+    "electron",
+    "cross-platform",
+    "impulse-control"
+  ],
+  "author": "Trading Risk Management Solutions",
+  "license": "PROPRIETARY"
+}
