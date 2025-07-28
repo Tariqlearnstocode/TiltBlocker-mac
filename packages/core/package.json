@@ -5,10 +5,10 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -f tsconfig.tsbuildinfo && tsc",
     "dev": "tsc --watch",
     "test": "jest",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "@types/uuid": "^10.0.0",

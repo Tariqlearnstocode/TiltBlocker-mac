@@ -8,11 +8,11 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspaces",
-    "build": "npm run build --workspaces",
+    "build": "npm run clean && npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "eslint packages/*/src --ext .ts,.tsx",
     "format": "prettier --write packages/*/src/**/*.{ts,tsx,json}",
-    "clean": "rimraf packages/*/dist packages/*/build",
+    "clean": "rimraf packages/*/dist packages/*/build packages/*/tsconfig.tsbuildinfo",
     "start-service": "cd packages/service && npx ts-node src/simple-service.ts",
     "start-app": "cd packages/app && npm run dev:renderer",
     "start-electron": "cd packages/app && npm run electron:dev",

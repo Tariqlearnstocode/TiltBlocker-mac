@@ -122,3 +122,80 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and code stand
 ## 📄 License
 
 Proprietary software for professional trading environments. 
+
+## 🐛 Troubleshooting
+
+## 🚀 Quick Start Guide
+
+1. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+
+2. **Build the Application**
+   ```bash
+   npm run build
+   ```
+
+3. **Start the Service (Requires Admin Privileges)**
+   ```bash
+   sudo npm run start-service
+   ```
+
+4. **Launch the GUI (Development Mode)**
+   ```bash
+   npm run dev
+   ```
+
+5. **Access the Interface**
+   - Open your browser and go to [http://localhost:5173](http://localhost:5173)
+
+6. **Configure Block Rules**
+   - Add URLs or applications to block via the GUI.
+   - Set schedules and emergency access options as needed.
+
+7. **Check Service Status**
+   ```bash
+   curl http://localhost:3001/api/status
+   ```
+
+For detailed configuration and advanced usage, see [docs/IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md).
+
+
+
+### Common Issues
+
+1. **Service Won't Start**
+   ```bash
+   # Check permissions
+   ls -la /path/to/service
+   
+   # Check logs
+   tail -f ~/.trader-block/logs/service.log
+   
+   # Restart with elevated privileges
+   sudo npm run start-service
+   ```
+
+2. **URL Blocking Not Working**
+   ```bash
+   # Check hosts file
+   cat /etc/hosts | grep TRADER-BLOCK
+   
+   # Flush DNS cache manually
+   sudo dscacheutil -flushcache  # macOS
+   ipconfig /flushdns            # Windows
+   sudo systemctl restart systemd-resolved  # Linux
+   ```
+
+3. **Process Blocking Fails**
+   ```bash
+   # Check if process exists
+   ps aux | grep [process-name]
+   
+   # Check blocking rules
+   curl http://localhost:3001/api/rules
+   
+   # Check service logs
+   tail -f ~/.trader-block/logs/blocker.log
+   ```
