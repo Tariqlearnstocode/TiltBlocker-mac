@@ -6,13 +6,14 @@ import {
   Alert,
   Typography
 } from '@mui/material';
-import { Warning as WarningIcon } from '@mui/icons-material';
+import { Warning as WarningIcon, CheckCircle as CheckCircleIcon } from '@mui/icons-material';
 
 interface EmergencyTabProps {
   tempPassword: string;
   onTempPasswordChange: (password: string) => void;
   onSavePassword: () => void;
   onEmergencyUnblock: () => void;
+  savedEmergencyPassword: string;
   isActiveBlockingTime: boolean;
   rulesCount: number;
 }
@@ -22,36 +23,58 @@ const EmergencyTab: React.FC<EmergencyTabProps> = ({
   onTempPasswordChange,
   onSavePassword,
   onEmergencyUnblock,
+  savedEmergencyPassword,
   isActiveBlockingTime,
   rulesCount
 }) => {
+  const hasPassword = savedEmergencyPassword && savedEmergencyPassword.length > 0;
   return (
     <Stack spacing={3}>
-      <Alert 
-        severity="warning" 
-        icon={<WarningIcon />}
-        sx={{
-          backgroundColor: '#FFF3CD',
-          borderLeft: '4px solid #FF6B35',
-          borderRadius: '12px',
-          padding: '16px',
-          '& .MuiAlert-icon': {
-            color: '#FF6B35',
-          }
-        }}
-      >
-        <Typography variant="body2" sx={{ color: '#1E293B' }}>
-          Set up your emergency password here. This password can be used to unlock during active lockout periods.
-        </Typography>
-      </Alert>
+      {hasPassword ? (
+        <Alert 
+          severity="success" 
+          icon={<CheckCircleIcon />}
+          sx={{
+            backgroundColor: '#D1FAE5',
+            borderLeft: '4px solid #00C896',
+            borderRadius: '12px',
+            padding: '16px',
+            '& .MuiAlert-icon': {
+              color: '#00C896',
+            }
+          }}
+        >
+          <Typography variant="body2" sx={{ color: '#1E293B' }}>
+            <strong>Emergency password is set.</strong> You can change it below if needed.
+          </Typography>
+        </Alert>
+      ) : (
+        <Alert 
+          severity="warning" 
+          icon={<WarningIcon />}
+          sx={{
+            backgroundColor: '#FFF3CD',
+            borderLeft: '4px solid #FF6B35',
+            borderRadius: '12px',
+            padding: '16px',
+            '& .MuiAlert-icon': {
+              color: '#FF6B35',
+            }
+          }}
+        >
+          <Typography variant="body2" sx={{ color: '#1E293B' }}>
+            Set up your emergency password here. This password can be used to unlock during active lockout periods.
+          </Typography>
+        </Alert>
+      )}
       
       <TextField
-        label="Set Emergency Password"
+        label={hasPassword ? "New Emergency Password" : "Set Emergency Password"}
         type="password"
         value={tempPassword}
         onChange={(e) => onTempPasswordChange(e.target.value)}
         size="small"
-        placeholder="Enter a memorable password"
+        placeholder={hasPassword ? "Enter new password" : "Enter a memorable password"}
         fullWidth
         sx={{
           '& .MuiOutlinedInput-root': {
@@ -105,7 +128,7 @@ const EmergencyTab: React.FC<EmergencyTabProps> = ({
           transition: 'all 0.2s ease',
         }}
       >
-        Save Emergency Password
+        {hasPassword ? 'Change Password' : 'Save Emergency Password'}
       </Button>
 
       <Alert 

@@ -19,7 +19,7 @@ import {
 import { Settings as SettingsIcon } from '@mui/icons-material';
 // CME Futures trading hours in Central Time (accounts for DST via America/Chicago timezone)
 // Electronic trading: Sunday 5 PM - Friday 4 PM CT (with daily 4-5 PM break)
-const TRADING_SESSIONS = {
+export const TRADING_SESSIONS = {
   'TOKYO': { 
     name: 'Tokyo',
     startHour: 17, // 5 PM
@@ -259,18 +259,24 @@ const LockoutModal: React.FC<LockoutModalProps> = ({
   
   const endTime = calculateEndTime();
   const formatEndTime = (time: Date): string => {
+    const baseOptions = {
+      weekday: 'short' as const,
+      month: 'short' as const,
+      day: 'numeric' as const,
+      hour: 'numeric' as const,
+      minute: '2-digit' as const,
+      hour12: true as const,
+    };
+
+    // When showLocalTime = false, show in Exchange time (America/Chicago)
     const timeString = time.toLocaleString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+      ...baseOptions,
+      ...(showLocalTime ? {} : { timeZone: 'America/Chicago' }),
     });
     
-    // Get timezone abbreviation (e.g., "PST", "EST", "CST")
     const timezone = time.toLocaleString('en-US', {
-      timeZoneName: 'short'
+      timeZoneName: 'short',
+      ...(showLocalTime ? {} : { timeZone: 'America/Chicago' }),
     }).split(' ').pop();
     
     return `${timeString} ${timezone}`;
@@ -323,7 +329,7 @@ const LockoutModal: React.FC<LockoutModalProps> = ({
             </span>
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-start', alignItems: 'flex-start' }}>
-            {blockedSites.map((site, index) => (
+            {blockedSites.slice(0, 5).map((site, index) => (
               <Chip
                 key={index}
                 label={site}
@@ -343,26 +349,24 @@ const LockoutModal: React.FC<LockoutModalProps> = ({
                 }}
               />
             ))}
+            {blockedSites.length > 5 && (
+              <Chip
+                label={`+${blockedSites.length - 5} more`}
+                sx={{
+                  backgroundColor: '#EFF6FF',
+                  color: '#1D4ED8',
+                  borderRadius: '8px',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  '& .MuiChip-label': {
+                    padding: '4px 8px',
+                  },
+                }}
+                onClick={onSettingsClick}
+              />
+            )}
           </Box>
-        </Box>
-        
-        <Alert 
-          severity="warning" 
-          sx={{ 
-            marginBottom: '24px',
-            backgroundColor: '#FFF3CD',
-            borderLeft: '4px solid #FF6B35',
-            borderRadius: '12px',
-            padding: '16px',
-            '& .MuiAlert-icon': {
-              color: '#FF6B35',
-            }
-          }}
-        >
-          <Typography variant="body2" sx={{ color: '#1B1F3B' }}>
-            <strong>Warning:</strong> This action cannot be undone without the emergency password.
-          </Typography>
-        </Alert>
+          </Box>
         
         {endTime && (
           <Box sx={{ 
@@ -726,6 +730,24 @@ const LockoutModal: React.FC<LockoutModalProps> = ({
           YES, LOCK ME OUT
         </Button>
       </DialogActions>
+      
+      <Alert 
+        severity="warning" 
+        sx={{ 
+          margin: '0 24px 24px',
+          backgroundColor: '#FFF3CD',
+          borderLeft: '4px solid #FF6B35',
+          borderRadius: '12px',
+          padding: '16px',
+          '& .MuiAlert-icon': {
+            color: '#FF6B35',
+          }
+        }}
+      >
+        <Typography variant="body2" sx={{ color: '#1B1F3B' }}>
+          <strong>Warning:</strong> This action cannot be undone without the emergency password.
+        </Typography>
+      </Alert>
     </Dialog>
   );
 };

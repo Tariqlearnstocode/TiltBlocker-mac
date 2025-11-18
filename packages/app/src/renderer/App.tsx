@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Fab } from '@mui/material';
-import { Block as BlockIcon } from '@mui/icons-material';
+import { Box } from '@mui/material';
 import LockoutModal from './components/LockoutModal';
 import SettingsModal from './components/SettingsModal';
 import EmergencyDialog from './components/EmergencyDialog';
 import LockoutActiveScreen from './components/LockoutActiveScreen';
+import LockoutFab from './components/LockoutFab';
+import QuickLockoutConfirmDialog from './components/QuickLockoutConfirmDialog';
+import { QUICK_LOCKOUT_OPTION_DEFS } from './components/tabs/QuickLockoutTab';
 
 interface BlockRule {
   id: string;
@@ -18,6 +20,13 @@ interface ServiceStatus {
   status: 'running' | 'stopped' | 'error';
   uptime: number;
   rulesCount: number;
+}
+
+interface QuickLockoutPreset {
+  id: number;
+  label: string;
+  minutes: number;
+  enabled: boolean;
 }
 
 function App() {
@@ -52,6 +61,9 @@ function App() {
   const [customDuration, setCustomDuration] = useState({ hours: 0, minutes: 15 });
   const [selectedSession, setSelectedSession] = useState('');
   const [userTimezone, setUserTimezone] = useState('America/Chicago'); // Default to CT
+  const [quickLockouts, setQuickLockouts] = useState<QuickLockoutPreset[]>([]);
+  const [quickConfirmOpen, setQuickConfirmOpen] = useState(false);
+  const [pendingQuickLockout, setPendingQuickLockout] = useState<{ durationMs: number; label: string } | null>(null);
 
   const API_BASE = 'http://localhost:3001';
 
@@ -87,35 +99,19 @@ function App() {
     setShowLockoutModal(true);
   };
 
-  // Handle settings button - show settings interface
+  // Handle settings button - show settings interface (Blocklist tab)
   const handleSettingsClick = () => {
     setShowLockoutModal(false);
+    setTabValue(0); // Blocklist tab
     setShowSettings(true);
   };
 
-  // Handle lockout confirmation - start blocking service
-  const handleLockoutConfirm = async () => {
+  // Core lockout starter used by both modal confirm and quick lockout FABs
+  const startLockout = async (durationMs: number) => {
+    if (!durationMs || durationMs <= 0) return;
+
     try {
       setLoading(true);
-      
-      // Get duration in milliseconds
-      let durationMs = 0;
-      
-      if (selectedSession) {
-        // Calculate session end time
-        durationMs = getSessionDuration(selectedSession);
-      } else if (selectedDuration === 'CUSTOM') {
-        durationMs = (customDuration.hours * 60 + customDuration.minutes) * 60 * 1000;
-      } else {
-        const durationMap: Record<string, number> = {
-          '15 MIN': 15 * 60 * 1000,
-          '30 MIN': 30 * 60 * 1000,
-          '1 HOUR': 60 * 60 * 1000,
-          'ALL DAY': 24 * 60 * 60 * 1000,
-          '30 DAYS': 30 * 24 * 60 * 60 * 1000
-        };
-        durationMs = durationMap[selectedDuration] || 0;
-      }
 
       // Start lockout with current blocklist
       const response = await fetch(`${API_BASE}/start-lockout`, {
@@ -135,7 +131,6 @@ function App() {
         setShowLockoutModal(false);
         setSelectedDuration('');
         setSelectedSession('');
-        
         // No need for frontend timer - server handles auto-stop
       } else {
         setError('Failed to start lockout');
@@ -146,6 +141,30 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle lockout confirmation - start blocking service
+  const handleLockoutConfirm = async () => {
+    // Get duration in milliseconds
+    let durationMs = 0;
+    
+    if (selectedSession) {
+      // Calculate session end time
+      durationMs = getSessionDuration(selectedSession);
+    } else if (selectedDuration === 'CUSTOM') {
+      durationMs = (customDuration.hours * 60 + customDuration.minutes) * 60 * 1000;
+    } else {
+      const durationMap: Record<string, number> = {
+        '15 MIN': 15 * 60 * 1000,
+        '30 MIN': 30 * 60 * 1000,
+        '1 HOUR': 60 * 60 * 1000,
+        'ALL DAY': 24 * 60 * 60 * 1000,
+        '30 DAYS': 30 * 24 * 60 * 60 * 1000
+      };
+      durationMs = durationMap[selectedDuration] || 0;
+    }
+
+    await startLockout(durationMs);
   };
 
   // Drag handlers
@@ -256,6 +275,30 @@ function App() {
       if (storedTimezone) {
         setUserTimezone(storedTimezone);
       }
+
+      // Load quick lockout presets
+      const storedQuick = localStorage.getItem('traderBlockQuickLockouts');
+      if (storedQuick) {
+        const parsed = JSON.parse(storedQuick);
+        if (Array.isArray(parsed)) {
+          // Ensure we have the right number of slots matching QUICK_LOCKOUT_OPTION_DEFS
+          const normalized = Array(QUICK_LOCKOUT_OPTION_DEFS.length).fill(null).map((_, index) => {
+            const existing = parsed[index];
+            return existing || { id: index + 1, label: '', minutes: 0, enabled: false };
+          });
+          setQuickLockouts(normalized);
+        }
+      } else {
+        // Default presets (disabled by default) - use QUICK_LOCKOUT_OPTION_DEFS as source of truth
+        setQuickLockouts(
+          QUICK_LOCKOUT_OPTION_DEFS.map((def, index) => ({
+            id: index + 1,
+            label: def.label,
+            minutes: def.defaultMinutes,
+            enabled: false,
+          }))
+        );
+      }
     } catch (err) {
       console.error('Failed to load rules from localStorage:', err);
       setError('Failed to load rules');
@@ -271,6 +314,38 @@ function App() {
       console.error('Failed to save rules to localStorage:', err);
       setError('Failed to save rules');
     }
+  };
+
+  const saveQuickLockouts = (presets: QuickLockoutPreset[]) => {
+    try {
+      localStorage.setItem('traderBlockQuickLockouts', JSON.stringify(presets));
+      setQuickLockouts(presets);
+    } catch (err) {
+      console.error('Failed to save quick lockouts to localStorage:', err);
+      setError('Failed to save quick lockouts');
+    }
+  };
+
+  const handleQuickLockoutsChange = (presets: QuickLockoutPreset[]) => {
+    saveQuickLockouts(presets);
+  };
+
+  const handleQuickLockout = (preset: QuickLockoutPreset) => {
+    const durationMs = preset.minutes * 60 * 1000;
+    setPendingQuickLockout({ durationMs, label: preset.label });
+    setQuickConfirmOpen(true);
+  };
+
+  const handleQuickConfirm = async () => {
+    if (!pendingQuickLockout) return;
+    await startLockout(pendingQuickLockout.durationMs);
+    setQuickConfirmOpen(false);
+    setPendingQuickLockout(null);
+  };
+
+  const handleQuickCancel = () => {
+    setQuickConfirmOpen(false);
+    setPendingQuickLockout(null);
   };
 
   // Save timezone setting
@@ -501,35 +576,11 @@ function App() {
   if (isMinimized && !showSettings) {
     return (
       <>
-      <Box
-        sx={{
-          position: 'fixed',
-          top: 20,
-          right: 20,
-          zIndex: 9999,
-        }}
-      >
-        <Fab
-          color="primary"
-            onClick={handleFabClick}
-          sx={{
-            background: '#4A90FF',
-            color: '#FFFFFF',
-            width: 56,
-            height: 56,
-            boxShadow: '0 4px 20px rgba(74, 144, 255, 0.3)',
-            '&:hover': {
-              background: '#3170db',
-              transform: 'translateY(-2px)',
-              boxShadow: '0 6px 24px rgba(74, 144, 255, 0.4)',
-            },
-            transition: 'all 0.2s ease-out',
-          }}
-          className="animate-float"
-        >
-          <BlockIcon />
-        </Fab>
-      </Box>
+        <LockoutFab
+          onClick={handleFabClick}
+          quickLockouts={quickLockouts}
+          onQuickLockoutClick={handleQuickLockout}
+        />
 
         <LockoutModal
           open={showLockoutModal}
@@ -543,6 +594,13 @@ function App() {
           blockedSites={rules.map(rule => rule.urlPatterns).flat()}
           selectedSession={selectedSession}
           onSessionChange={handleSessionChange}
+        />
+
+        <QuickLockoutConfirmDialog
+          open={quickConfirmOpen}
+          durationLabel={pendingQuickLockout?.label || ''}
+          onCancel={handleQuickCancel}
+          onConfirm={handleQuickConfirm}
         />
       </>
     );
@@ -564,10 +622,10 @@ function App() {
         serviceStatus={serviceStatus}
         tabValue={tabValue}
         onTabChange={setTabValue}
-        isDragging={isDragging}
-        hasMoved={hasMoved}
+        isDragging={false}
+        hasMoved={false}
         windowPosition={windowPosition}
-        onMouseDown={handleMouseDown}
+        onMouseDown={() => {}}
         newUrl={newUrl}
         onUrlChange={setNewUrl}
         onAddUrl={handleAddUrl}
@@ -583,12 +641,17 @@ function App() {
         onTempPasswordChange={setTempPassword}
         onSavePassword={() => setSavedEmergencyPassword(tempPassword)}
         onEmergencyUnblock={() => setEmergencyDialog(true)}
+        savedEmergencyPassword={savedEmergencyPassword}
         selectedDuration={selectedDuration}
         onDurationChange={setSelectedDuration}
         customDuration={customDuration}
         onCustomDurationChange={setCustomDuration}
+        selectedSession={selectedSession}
+        onSessionChange={handleSessionChange}
         onLockoutConfirm={handleLockoutConfirm}
         isLockoutActive={isLockoutActive}
+        quickLockouts={quickLockouts}
+        onQuickLockoutsChange={handleQuickLockoutsChange}
       />
     </>
   );

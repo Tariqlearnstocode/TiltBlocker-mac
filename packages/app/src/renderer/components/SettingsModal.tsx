@@ -1,14 +1,12 @@
 import React from 'react';
 import {
   Box,
-  Card,
-  Slide,
-  Backdrop,
   Typography,
   Chip,
   IconButton,
   Tabs,
-  Tab
+  Tab,
+  Dialog,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -18,7 +16,8 @@ import {
 } from '@mui/icons-material';
 import BlocklistTab from './tabs/BlocklistTab';
 import EmergencyTab from './tabs/EmergencyTab';
-import LockoutTab from './tabs/LockoutTab';
+import QuickLockoutTab, { QuickLockoutPreset } from './tabs/QuickLockoutTab';
+import LockoutModal from './LockoutModal';
 
 interface BlockRule {
   id: string;
@@ -93,14 +92,19 @@ interface SettingsModalProps {
   onTempPasswordChange: (password: string) => void;
   onSavePassword: () => void;
   onEmergencyUnblock: () => void;
+  savedEmergencyPassword: string;
   
   // Lockout Modal props
   selectedDuration: string;
   onDurationChange: (duration: string) => void;
   customDuration: { hours: number; minutes: number };
   onCustomDurationChange: (duration: { hours: number; minutes: number }) => void;
+  selectedSession: string;
+  onSessionChange: (session: string) => void;
   onLockoutConfirm: () => void;
   isLockoutActive: boolean;
+  quickLockouts: QuickLockoutPreset[];
+  onQuickLockoutsChange: (presets: QuickLockoutPreset[]) => void;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -123,43 +127,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   error,
   rules,
   onClearError,
+  onClearAllRules,
   tempPassword,
   onTempPasswordChange,
   onSavePassword,
   onEmergencyUnblock,
+  savedEmergencyPassword,
   selectedDuration,
   onDurationChange,
   customDuration,
   onCustomDurationChange,
+  selectedSession,
+  onSessionChange,
   onLockoutConfirm,
-  isLockoutActive
+  isLockoutActive,
+  quickLockouts,
+  onQuickLockoutsChange
 }) => {
   console.log('SettingsModal isLockoutActive:', isLockoutActive);
   console.log('SettingsModal open:', open);
   if (!open) return null;
 
   return (
-    <>
-      <Backdrop open={true} sx={{ zIndex: 1000, backgroundColor: 'rgba(30, 41, 59, 0.8)' }} />
-      <Slide direction="up" in={open} mountOnEnter unmountOnExit>
-        <Card
-          className="draggable-card"
-          sx={{
-            position: 'fixed',
-            top: hasMoved ? `${windowPosition.y}px` : '50%',
-            left: hasMoved ? `${windowPosition.x}px` : '50%',
-            transform: hasMoved ? 'none' : 'translate(-50%, -50%)',
-            width: 580,
-            maxHeight: '80vh',
-            zIndex: 9999,
-            background: '#FFFFFF',
-            borderRadius: '20px',
-            border: 'none',
-            boxShadow: isDragging ? '0 8px 32px rgba(30, 41, 59, 0.25)' : '0 4px 20px rgba(30, 41, 59, 0.10)',
-            overflow: 'hidden',
-            transition: isDragging ? 'none' : 'box-shadow 0.2s ease',
-          }}
-        >
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: '20px',
+          background: '#FFFFFF',
+          boxShadow: '0 4px 20px rgba(27, 31, 59, 0.1)',
+          border: 'none',
+          maxHeight: '80vh',
+          overflow: 'hidden',
+        },
+      }}
+    >
           {/* Header */}
           <Box
             sx={{
@@ -247,6 +252,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <Tab label="Blocklist" disableRipple />
             <Tab label="Lockout" disableRipple />
+            <Tab label="Quick Lockout" disableRipple />
             <Tab label="Emergency" disableRipple />
           </Tabs>
 
@@ -269,29 +275,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             </TabPanel>
 
             <TabPanel value={tabValue} index={1}>
-              <LockoutTab
+              <LockoutModal
+                open={true}
+                onClose={onClose}
+                onSettingsClick={() => onTabChange(0)}
+                onConfirm={onLockoutConfirm}
                 selectedDuration={selectedDuration}
                 onDurationChange={onDurationChange}
                 customDuration={customDuration}
                 onCustomDurationChange={onCustomDurationChange}
-                onLockoutConfirm={onLockoutConfirm}
+                blockedSites={rules.map(rule => rule.urlPatterns).flat()}
+                selectedSession={selectedSession}
+                onSessionChange={onSessionChange}
               />
             </TabPanel>
 
             <TabPanel value={tabValue} index={2}>
+              <QuickLockoutTab
+                presets={quickLockouts}
+                onChange={onQuickLockoutsChange}
+              />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={3}>
               <EmergencyTab
                 tempPassword={tempPassword}
                 onTempPasswordChange={onTempPasswordChange}
                 onSavePassword={onSavePassword}
                 onEmergencyUnblock={onEmergencyUnblock}
+                savedEmergencyPassword={savedEmergencyPassword}
                 isActiveBlockingTime={false}
                 rulesCount={rules.length}
               />
             </TabPanel>
           </Box>
-        </Card>
-      </Slide>
-    </>
+    </Dialog>
   );
 };
 
