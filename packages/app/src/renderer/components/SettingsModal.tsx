@@ -16,7 +16,7 @@ import {
   CheckCircle as CheckCircleIcon,
   DragIndicator as DragIcon
 } from '@mui/icons-material';
-import CommonSitesTab from './tabs/CommonSitesTab';
+import BlocklistTab from './tabs/BlocklistTab';
 import EmergencyTab from './tabs/EmergencyTab';
 import LockoutTab from './tabs/LockoutTab';
 
@@ -74,12 +74,14 @@ interface SettingsModalProps {
   newUrl: string;
   onUrlChange: (url: string) => void;
   onAddUrl: (url: string) => void;
+  onAddMultipleUrls: (urls: string[]) => void;
   onDeleteRule: (ruleId: string) => void;
   onKeyPress: (e: React.KeyboardEvent) => void;
   loading: boolean;
   error: string | null;
   rules: BlockRule[];
   onClearError: () => void;
+  onClearAllRules: () => void;
   
   // Common Sites Tab props
   // (uses onAddUrl from Quick Block Tab props)
@@ -114,6 +116,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   newUrl,
   onUrlChange,
   onAddUrl,
+  onAddMultipleUrls,
   onDeleteRule,
   onKeyPress,
   loading,
@@ -250,9 +253,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Tab Panels */}
           <Box sx={{ maxHeight: '60vh', overflow: 'auto', backgroundColor: '#FFFFFF' }}>
             <TabPanel value={tabValue} index={0}>
-              <CommonSitesTab
+              <BlocklistTab
                 loading={loading}
                 onAddUrl={onAddUrl}
+                onAddMultipleUrls={onAddMultipleUrls}
                 newUrl={newUrl}
                 onUrlChange={onUrlChange}
                 onDeleteRule={onDeleteRule}
@@ -260,6 +264,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 error={error}
                 rules={rules}
                 onClearError={onClearError}
+                onClearAllRules={onClearAllRules}
               />
             </TabPanel>
 

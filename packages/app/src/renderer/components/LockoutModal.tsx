@@ -240,6 +240,9 @@ const LockoutModal: React.FC<LockoutModalProps> = ({
           case '1 HOUR':
             milliseconds = 60 * 60 * 1000;
             break;
+          case '30 DAYS':
+            milliseconds = 30 * 24 * 60 * 60 * 1000;
+            break;
           case 'CUSTOM':
             milliseconds = (customDuration.hours * 60 + customDuration.minutes) * 60 * 1000;
             break;
@@ -500,7 +503,7 @@ const LockoutModal: React.FC<LockoutModalProps> = ({
               Or select duration:
             </Typography>
             <Grid container spacing={1.5}>
-              {['15 MIN', '30 MIN', '1 HOUR', 'ALL DAY', 'CUSTOM'].map((duration) => (
+              {['15 MIN', '1 HOUR', 'ALL DAY', '30 DAYS', 'CUSTOM'].map((duration) => (
               <Grid item xs={2.4} key={duration}>
                 <Button
                   variant={selectedDuration === duration ? 'contained' : 'outlined'}

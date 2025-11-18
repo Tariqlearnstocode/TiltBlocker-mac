@@ -111,7 +111,8 @@ function App() {
           '15 MIN': 15 * 60 * 1000,
           '30 MIN': 30 * 60 * 1000,
           '1 HOUR': 60 * 60 * 1000,
-          'ALL DAY': 24 * 60 * 60 * 1000
+          'ALL DAY': 24 * 60 * 60 * 1000,
+          '30 DAYS': 30 * 24 * 60 * 60 * 1000
         };
         durationMs = durationMap[selectedDuration] || 0;
       }
@@ -300,9 +301,9 @@ function App() {
     try {
       const newRule: BlockRule = {
         id: Date.now().toString(),
-          name: `Block ${url}`,
-          urlPatterns: [url.trim()],
-          enabled: true,
+        name: `Block ${url}`,
+        urlPatterns: [url.trim()],
+        enabled: true,
         createdAt: new Date().toISOString()
       };
 
@@ -316,8 +317,51 @@ function App() {
     }
   };
 
+  // Add multiple rules at once (used by "Block All")
+  const handleAddMultipleUrls = (urls: string[]) => {
+    const cleaned = urls
+      .map(u => u.trim())
+      .filter(Boolean);
+    if (cleaned.length === 0) return;
 
+    setLoading(true);
+    setError(null);
 
+    try {
+      const existingPatterns = new Set(
+        rules.flatMap(rule =>
+          (rule.urlPatterns || []).map(p => p.trim().toLowerCase())
+        )
+      );
+
+      const nowIso = new Date().toISOString();
+      const baseTimestamp = Date.now();
+
+      const newRules: BlockRule[] = [];
+      cleaned.forEach((url, index) => {
+        const lower = url.toLowerCase();
+        if (existingPatterns.has(lower)) return;
+
+        newRules.push({
+          id: `${baseTimestamp}-${index}`,
+          name: `Block ${url}`,
+          urlPatterns: [url],
+          enabled: true,
+          createdAt: nowIso
+        });
+      });
+
+      if (newRules.length === 0) return;
+
+      const updatedRules = [...rules, ...newRules];
+      saveRules(updatedRules);
+    } catch (err) {
+      console.error('Failed to add URLs', err);
+      setError('Failed to add URLs');
+    } finally {
+      setLoading(false);
+    }
+  };
   // Delete rule from blocklist (localStorage only)
   const handleDeleteRule = (ruleId: string) => {
     try {
@@ -325,6 +369,16 @@ function App() {
       saveRules(updatedRules);
     } catch (err) {
       setError('Failed to delete rule');
+    }
+  };
+
+  // Clear entire blocklist
+  const handleClearAllRules = () => {
+    try {
+      saveRules([]);
+    } catch (err) {
+      console.error('Failed to clear blocklist', err);
+      setError('Failed to clear blocklist');
     }
   };
 
@@ -517,12 +571,14 @@ function App() {
         newUrl={newUrl}
         onUrlChange={setNewUrl}
         onAddUrl={handleAddUrl}
+        onAddMultipleUrls={handleAddMultipleUrls}
         onDeleteRule={handleDeleteRule}
         onKeyPress={handleKeyPress}
         loading={loading}
         error={error}
         rules={rules}
         onClearError={() => setError(null)}
+        onClearAllRules={handleClearAllRules}
         tempPassword={tempPassword}
         onTempPasswordChange={setTempPassword}
         onSavePassword={() => setSavedEmergencyPassword(tempPassword)}
