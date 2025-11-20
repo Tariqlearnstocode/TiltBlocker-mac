@@ -83,11 +83,13 @@ export class TraderBlockApp {
     const bounds = this.store.get('windowBounds');
     
     this.mainWindow = new BrowserWindow({
-      width: bounds?.width || 1200,
-      height: bounds?.height || 800,
+      width: bounds?.width || 700,
+      height: bounds?.height || 600,
+      minWidth: 600,
+      minHeight: 500,
       x: bounds?.x,
       y: bounds?.y,
-      title: 'Trader Browser Block',
+      title: 'TraderBlock Settings',
       icon: this.getAppIcon(),
       webPreferences: {
         nodeIntegration: false,
@@ -98,6 +100,7 @@ export class TraderBlockApp {
       show: !this.store.get('startMinimized'),
       minimizable: true,
       closable: true,
+      resizable: true,
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default'
     });
 

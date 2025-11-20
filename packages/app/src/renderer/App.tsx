@@ -42,14 +42,6 @@ function App() {
   const [showLockoutModal, setShowLockoutModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   
-  // Drag state
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [windowPosition, setWindowPosition] = useState({ x: 0, y: 0 });
-  const [hasMoved, setHasMoved] = useState(false);
-  
-
-  
   // Emergency dialog
   const [emergencyDialog, setEmergencyDialog] = useState(false);
   const [emergencyPassword, setEmergencyPassword] = useState('');
@@ -64,6 +56,9 @@ function App() {
   const [quickLockouts, setQuickLockouts] = useState<QuickLockoutPreset[]>([]);
   const [quickConfirmOpen, setQuickConfirmOpen] = useState(false);
   const [pendingQuickLockout, setPendingQuickLockout] = useState<{ durationMs: number; label: string } | null>(null);
+  
+  // Preferences
+  const [showFab, setShowFab] = useState(true); // Always show FAB for now (TODO: add alternative way to open settings)
 
   const API_BASE = 'http://localhost:3001';
 
@@ -166,61 +161,6 @@ function App() {
 
     await startLockout(durationMs);
   };
-
-  // Drag handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-    
-    const rect = e.currentTarget.closest('.draggable-card')?.getBoundingClientRect();
-    if (rect && !hasMoved) {
-      setWindowPosition({
-        x: rect.left,
-        y: rect.top
-      });
-      setDragOffset({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-      });
-    } else {
-      setDragOffset({
-        x: e.clientX - windowPosition.x,
-        y: e.clientY - windowPosition.y
-      });
-    }
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isDragging) {
-      const newX = e.clientX - dragOffset.x;
-      const newY = e.clientY - dragOffset.y;
-      
-      const maxX = window.innerWidth - 480;
-      const maxY = window.innerHeight - 200;
-      
-      setWindowPosition({
-        x: Math.max(0, Math.min(maxX, newX)),
-        y: Math.max(0, Math.min(maxY, newY))
-      });
-      setHasMoved(true);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isDragging, dragOffset]);
 
   // Fetch service status and lockout state
   const fetchStatus = async () => {
@@ -328,6 +268,13 @@ function App() {
 
   const handleQuickLockoutsChange = (presets: QuickLockoutPreset[]) => {
     saveQuickLockouts(presets);
+  };
+
+  const handleShowFabChange = (show: boolean) => {
+    // TODO: Disabled until we add alternative way to access settings (system tray, menu bar, etc.)
+    // setShowFab(show);
+    // localStorage.setItem('showFab', JSON.stringify(show));
+    console.log('FAB visibility toggle disabled - need alternative settings access first');
   };
 
   const handleQuickLockout = (preset: QuickLockoutPreset) => {
@@ -622,10 +569,6 @@ function App() {
         serviceStatus={serviceStatus}
         tabValue={tabValue}
         onTabChange={setTabValue}
-        isDragging={false}
-        hasMoved={false}
-        windowPosition={windowPosition}
-        onMouseDown={() => {}}
         newUrl={newUrl}
         onUrlChange={setNewUrl}
         onAddUrl={handleAddUrl}
@@ -652,6 +595,8 @@ function App() {
         isLockoutActive={isLockoutActive}
         quickLockouts={quickLockouts}
         onQuickLockoutsChange={handleQuickLockoutsChange}
+        showFab={showFab}
+        onShowFabChange={handleShowFabChange}
       />
     </>
   );
