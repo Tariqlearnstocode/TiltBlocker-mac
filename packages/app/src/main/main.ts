@@ -109,7 +109,7 @@ export class TraderBlockApp {
       this.mainWindow.loadURL('http://localhost:5173');
       this.mainWindow.webContents.openDevTools();
     } else {
-      this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+      this.mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
     }
 
     // Window event handlers

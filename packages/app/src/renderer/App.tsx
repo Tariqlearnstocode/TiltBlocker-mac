@@ -40,7 +40,7 @@ function App() {
   const [tabValue, setTabValue] = useState(0);
   const [isMinimized, setIsMinimized] = useState(true);
   const [showLockoutModal, setShowLockoutModal] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(true); // Show main interface by default
   
   // Emergency dialog
   const [emergencyDialog, setEmergencyDialog] = useState(false);
