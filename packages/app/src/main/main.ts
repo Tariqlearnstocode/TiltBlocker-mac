@@ -15,6 +15,7 @@ interface AppConfig {
 
 export class TraderBlockApp {
   private mainWindow: BrowserWindow | null = null;
+  private fabWindow: BrowserWindow | null = null;
   private tray: Tray | null = null;
   private store: Store<AppConfig>;
   private isDev = process.env.NODE_ENV === 'development';
@@ -48,6 +49,7 @@ export class TraderBlockApp {
     // App event handlers
     app.whenReady().then(() => {
       this.createMainWindow();
+      this.createFabWindow();
       this.createTray();
       this.setupIpcHandlers();
       this.startServiceHealthCheck();
@@ -97,7 +99,7 @@ export class TraderBlockApp {
         preload: path.join(__dirname, 'preload.js'),
         webSecurity: !this.isDev
       },
-      show: !this.store.get('startMinimized'),
+      show: false, // Start hidden, show via FAB or tray
       minimizable: true,
       closable: true,
       resizable: true,
@@ -134,6 +136,56 @@ export class TraderBlockApp {
     this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
       shell.openExternal(url);
       return { action: 'deny' };
+    });
+  }
+
+  private createFabWindow(): void {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width } = primaryDisplay.workAreaSize;
+
+    // FAB size - wider to accommodate quick lockout buttons
+    const fabWidth = 80;
+    const fabHeight = 300;
+    const margin = 20;
+
+    this.fabWindow = new BrowserWindow({
+      width: fabWidth,
+      height: fabHeight,
+      x: width - fabWidth - margin,
+      y: margin, // TOP right, not bottom
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      backgroundColor: '#00000000', // Fully transparent
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+        webSecurity: !this.isDev
+      }
+    });
+
+    // Load the same app but it will render just the FAB
+    if (this.isDev) {
+      this.fabWindow.loadURL('http://localhost:5173?fab=true');
+    } else {
+      this.fabWindow.loadFile(path.join(__dirname, 'renderer/index.html'), {
+        query: { fab: 'true' }
+      });
+    }
+
+    this.fabWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    this.fabWindow.setAlwaysOnTop(true, 'floating', 1);
+
+    this.fabWindow.on('closed', () => {
+      this.fabWindow = null;
     });
   }
 
@@ -247,6 +299,13 @@ export class TraderBlockApp {
     });
 
     // Window management
+    ipcMain.handle('window:show-main', (event, shouldShowLockoutModal = false) => {
+      this.showMainWindow();
+      if (shouldShowLockoutModal && this.mainWindow) {
+        this.mainWindow.webContents.send('show-lockout-modal');
+      }
+    });
+
     ipcMain.handle('window:minimize', () => {
       this.mainWindow?.minimize();
     });

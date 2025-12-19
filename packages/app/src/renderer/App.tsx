@@ -30,6 +30,9 @@ interface QuickLockoutPreset {
 }
 
 function App() {
+  // Check if we're in FAB-only mode
+  const isFabMode = new URLSearchParams(window.location.search).get('fab') === 'true';
+
   const [rules, setRules] = useState<BlockRule[]>([]);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus | null>(null);
   const [newUrl, setNewUrl] = useState('');
@@ -40,7 +43,7 @@ function App() {
   const [tabValue, setTabValue] = useState(0);
   const [isMinimized, setIsMinimized] = useState(true);
   const [showLockoutModal, setShowLockoutModal] = useState(false);
-  const [showSettings, setShowSettings] = useState(true); // Show main interface by default
+  const [showSettings, setShowSettings] = useState(false);
   
   // Emergency dialog
   const [emergencyDialog, setEmergencyDialog] = useState(false);
@@ -475,8 +478,54 @@ function App() {
       fetchStatus();
     }, 5000);
 
-    return () => clearInterval(interval);
+    if (window.electronAPI && window.electronAPI.onShowLockoutModal) {
+      window.electronAPI.onShowLockoutModal(() => {
+        setTabValue(1); // Switch to Lockout tab
+        setShowSettings(true); // Ensure settings are visible
+      });
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (window.electronAPI) {
+        window.electronAPI.removeAllListeners('show-lockout-modal');
+      }
+    };
   }, []);
+
+  // If in FAB mode, render only the floating FAB
+  if (isFabMode) {
+    const handleFabClickInFabMode = () => {
+      // Call the electron API to show the main window
+      if (window.electronAPI) {
+        window.electronAPI.showMainWindow(true);
+      }
+    };
+
+    return (
+      <Box
+        sx={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'transparent',
+        }}
+      >
+        <LockoutFab
+          onClick={handleFabClickInFabMode}
+          quickLockouts={quickLockouts}
+          onQuickLockoutClick={(preset: QuickLockoutPreset) => {
+            // Quick lockout from FAB - trigger directly then show main window
+            const durationMs = preset.minutes * 60 * 1000;
+            startLockout(durationMs);
+            window.electronAPI?.showMainWindow();
+          }}
+        />
+      </Box>
+    );
+  }
 
   // Show lockout active screen when locked out
   if (isLockoutActive) {

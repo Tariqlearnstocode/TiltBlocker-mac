@@ -65,6 +65,17 @@
             position: relative;
             color: var(--color-text-primary);
         }
+
+        /* Transparent background for FAB mode */
+        body.fab-mode {
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+
+        body.fab-mode #root {
+            background: transparent !important;
+            box-shadow: none !important;
+        }
         
         #root {
             height: 100vh;
@@ -111,6 +122,13 @@
             animation: pulse 2s ease-in-out infinite;
         }
     </style>
+    <script>
+        // Check if we're in FAB mode and add class to body
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('fab') === 'true') {
+            document.body.classList.add('fab-mode');
+        }
+    </script>
 </head>
 <body>
     <div id="root"></div>

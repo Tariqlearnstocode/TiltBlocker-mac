@@ -18,9 +18,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAppConfig: (config: any) => ipcRenderer.invoke('app:set-config', config),
 
   // Window management
+  showMainWindow: (showLockoutModal?: boolean) => ipcRenderer.invoke('window:show-main', showLockoutModal),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
   toggleDevTools: () => ipcRenderer.invoke('window:toggle-devtools'),
+
+  // ... existing event listeners ...
+  onShowLockoutModal: (callback: () => void) => 
+    ipcRenderer.on('show-lockout-modal', () => callback()),
 
   // File operations
   showSaveDialog: (options: any) => ipcRenderer.invoke('file:show-save-dialog', options),
