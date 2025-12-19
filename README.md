@@ -158,6 +158,24 @@ However, the current `simple-service.ts` does not use the database - it stores r
 1. Switch to the full service (`packages/service/src/index.ts`), or
 2. Integrate database calls into the simple service
 
+## 🚨 Emergency Rescue Scripts
+
+If you accidentally delete the application while a lockout is active, your system's HOSTS file may remain modified, blocking access to websites. We provide standalone rescue scripts to fix this:
+
+### 🍎 macOS / 🐧 Linux
+1. Download `scripts/rescue-system.sh`
+2. Run in terminal:
+   ```bash
+   chmod +x rescue-system.sh
+   sudo ./rescue-system.sh
+   ```
+
+### 🪟 Windows
+1. Download `scripts/rescue-system.bat`
+2. Right-click and select **"Run as Administrator"**
+
+These scripts will remove all Trader Block entries from your HOSTS file and flush your DNS cache, restoring full internet access.
+
 ## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and code standards.
