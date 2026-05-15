@@ -1,5 +1,16 @@
-node_modules/
-*.log
-dist/
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+DerivedData/
+.DS_Store
+
+# Build artifact — produced by build-app.sh
 build/
+
+# Legacy Electron app artifacts
+**/node_modules/
+legacy/**/dist/
+legacy/package-lock.json
+*.log
 .env
