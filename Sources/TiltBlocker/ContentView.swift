@@ -22,6 +22,10 @@ private struct MainView: View {
     @State private var durationMinutes: Int = 60
     @State private var showEmergency = false
     @State private var showChangePartner = false
+    @State private var newDomain: String = ""
+    @State private var customHours: String = ""
+    @State private var customMinutes: String = ""
+    @State private var showCustom: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -39,8 +43,13 @@ private struct MainView: View {
             }
 
             if let ends = state.lockoutEndsAt {
-                Text("Ends \(ends.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption).foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    Text("Ends \(ends.formatted(date: .omitted, time: .shortened))")
+                    Text("·")
+                    Text(timerInterval: Date()...ends, countsDown: true)
+                        .monospacedDigit()
+                }
+                .font(.caption).foregroundColor(.secondary)
             } else if let next = state.nextWindow {
                 Text("Next window: \(next.days.joined(separator: ",")) \(next.start)–\(next.end)")
                     .font(.caption).foregroundColor(.secondary)
@@ -48,18 +57,47 @@ private struct MainView: View {
 
             Divider()
 
-            Text("Blocking \(state.blocklist.count) domains").font(.caption)
+            HStack {
+                Text("Blocking \(state.blocklist.count) domains").font(.caption)
+                Spacer()
+                if state.isLocked {
+                    Text("remove disabled during lockout")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(state.blocklist, id: \.self) { d in
-                        Text(d).font(.system(.caption, design: .monospaced))
+                        HStack(spacing: 4) {
+                            Text(d).font(.system(.caption, design: .monospaced))
+                            Spacer()
+                            Button {
+                                state.removeDomain(d)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(state.isLocked)
+                            .opacity(state.isLocked ? 0.3 : 1)
+                        }
                     }
                     if state.blocklist.isEmpty {
-                        Text("Edit ~/.tiltblocker/blocklist.txt").font(.caption2).foregroundColor(.secondary)
+                        Text("Add a domain below or edit ~/.tiltblocker/blocklist.txt")
+                            .font(.caption2).foregroundColor(.secondary)
                     }
                 }
             }
-            .frame(maxHeight: 80)
+            .frame(maxHeight: 140)
+
+            HStack {
+                TextField("add domain (e.g. example.com)", text: $newDomain)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .onSubmit { commitAddDomain() }
+                Button("Add") { commitAddDomain() }
+                    .disabled(newDomain.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
 
             Divider()
 
@@ -69,6 +107,27 @@ private struct MainView: View {
                 }
                 .sheet(isPresented: $showEmergency) {
                     EmergencyView().environmentObject(state)
+                }
+            } else if showCustom {
+                HStack(spacing: 4) {
+                    TextField("0", text: $customHours)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 44)
+                    Text("h").font(.caption).foregroundColor(.secondary)
+                    TextField("0", text: $customMinutes)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 44)
+                    Text("m").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Button("Cancel") {
+                        showCustom = false
+                        customHours = ""
+                        customMinutes = ""
+                    }
+                    .buttonStyle(.plain).font(.caption)
+                    Button("Lock") { commitCustomLockout() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(totalCustomMinutes() == 0)
                 }
             } else {
                 HStack {
@@ -80,13 +139,34 @@ private struct MainView: View {
                         Text("4 h").tag(240)
                         Text("8 h").tag(480)
                         Text("24 h").tag(1440)
+                        Text("Custom…").tag(-1)
                     }
                     .labelsHidden()
+                    .onChange(of: durationMinutes) { new in
+                        if new == -1 {
+                            showCustom = true
+                            durationMinutes = 60
+                        }
+                    }
                     Button("Lock") {
                         state.startManualLockout(minutes: durationMinutes)
                     }
                     .buttonStyle(.borderedProminent)
                 }
+            }
+
+            if !state.helperInstalled {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Privileged helper not installed").font(.caption)
+                    Spacer()
+                    Button("Set up") { state.installHelper() }
+                        .font(.caption)
+                }
+                .padding(6)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(4)
             }
 
             if let err = state.lastError {
@@ -110,6 +190,26 @@ private struct MainView: View {
                 ChangePartnerView().environmentObject(state)
             }
         }
+    }
+
+    private func commitAddDomain() {
+        let d = newDomain.trimmingCharacters(in: .whitespaces)
+        guard !d.isEmpty else { return }
+        state.addDomain(d)
+        newDomain = ""
+    }
+
+    private func totalCustomMinutes() -> Int {
+        (Int(customHours) ?? 0) * 60 + (Int(customMinutes) ?? 0)
+    }
+
+    private func commitCustomLockout() {
+        let total = totalCustomMinutes()
+        guard total > 0 else { return }
+        state.startManualLockout(minutes: total)
+        customHours = ""
+        customMinutes = ""
+        showCustom = false
     }
 }
 
@@ -279,7 +379,7 @@ private struct SetupView: View {
     @EnvironmentObject var state: AppState
     @State private var partnerEmail = ""
     @State private var resendKey = ""
-    @State private var fromAddress = "TiltBlocker <onboarding@resend.dev>"
+    @State private var fromAddress = "TiltBlocker <clarence@claudecoworkcourse.com>"
     @State private var busy = false
     @State private var error: String? = nil
 

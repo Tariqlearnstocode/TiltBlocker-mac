@@ -12,6 +12,7 @@ final class AppState: ObservableObject {
 
     // Setup state
     @Published var isSetUp: Bool = false
+    @Published var helperInstalled: Bool = false
 
     // Transient: code currently emailed to partner, awaiting entry. Cleared on app quit.
     @Published var pendingCodeIssuedAt: Date? = nil
@@ -24,6 +25,20 @@ final class AppState: ObservableObject {
         reloadConfig()
         isSetUp = Keychain.get(SetupKeys.partnerEmail) != nil
             && Keychain.get(SetupKeys.resendKey) != nil
+        helperInstalled = Blocker.isHelperInstalled()
+
+        // Install the privileged helper at launch — one admin prompt, ever.
+        // All future hosts edits are passwordless. If user cancels, button in UI lets them retry.
+        if !helperInstalled {
+            Task { @MainActor in
+                do {
+                    try Blocker.installHelper()
+                    helperInstalled = true
+                } catch {
+                    lastError = "Helper install failed: \(error.localizedDescription)"
+                }
+            }
+        }
 
         // Restore active lockout if app was quit during one
         if let s = StateStore.read() {
@@ -37,6 +52,16 @@ final class AppState: ObservableObject {
         }
 
         startTicker()
+    }
+
+    func installHelper() {
+        do {
+            try Blocker.installHelper()
+            helperInstalled = true
+            lastError = nil
+        } catch {
+            lastError = "Helper install failed: \(error.localizedDescription)"
+        }
     }
 
     func reloadConfig() {
@@ -90,11 +115,37 @@ final class AppState: ObservableObject {
 
     // MARK: - User actions
 
+    func addDomain(_ raw: String) {
+        let clean = raw.trimmingCharacters(in: .whitespaces).lowercased()
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+        guard !clean.isEmpty, !blocklist.contains(clean) else { return }
+        blocklist.append(clean)
+        Config.saveBlocklist(blocklist)
+        if isLocked { applyLock(true) }  // re-applies hosts with the new domain included
+    }
+
+    /// Removing is disabled during an active lockout — that would be a trivial bypass.
+    func removeDomain(_ domain: String) {
+        guard !isLocked else { return }
+        blocklist.removeAll { $0 == domain }
+        Config.saveBlocklist(blocklist)
+    }
+
     func startManualLockout(minutes: Int) {
+        // Apply hosts FIRST. If the admin auth fails / user cancels, we must not
+        // pretend the lockout is active — UI state and /etc/hosts would diverge.
+        do {
+            try Blocker.apply(domains: blocklist)
+        } catch {
+            lastError = "Lockout failed: \(error.localizedDescription)"
+            return
+        }
         let ends = Date().addingTimeInterval(TimeInterval(minutes * 60))
         lockoutEndsAt = ends
         StateStore.write(LockoutState(endsAt: ends))
-        applyLock(true)
+        isLocked = true
+        lastError = nil
     }
 
     func endLockoutWithPassword(_ code: String) -> Bool {
@@ -115,7 +166,7 @@ final class AppState: ObservableObject {
               let apiKey = Keychain.get(SetupKeys.resendKey) else {
             throw ResendError.missingConfig
         }
-        let from = Keychain.get(SetupKeys.resendFrom) ?? "TiltBlocker <onboarding@resend.dev>"
+        let from = Keychain.get(SetupKeys.resendFrom) ?? "TiltBlocker <clarence@claudecoworkcourse.com>"
         let code = generatePassword(length: 10)
         let client = ResendClient(apiKey: apiKey, fromAddress: from)
         try await client.send(
@@ -153,7 +204,7 @@ final class AppState: ObservableObject {
             throw ResendError.missingConfig
         }
         let oldEmail = Keychain.get(SetupKeys.partnerEmail)
-        let from = Keychain.get(SetupKeys.resendFrom) ?? "TiltBlocker <onboarding@resend.dev>"
+        let from = Keychain.get(SetupKeys.resendFrom) ?? "TiltBlocker <clarence@claudecoworkcourse.com>"
         let client = ResendClient(apiKey: apiKey, fromAddress: from)
 
         // Required: welcome new partner. If this fails, abort — don't end up in a state

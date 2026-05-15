@@ -50,6 +50,14 @@ enum Config {
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
     }
 
+    /// Overwrites the blocklist file. Strips comments other than the header line —
+    /// in-app editing is the convenient path; direct file editing is the source-of-truth path.
+    static func saveBlocklist(_ domains: [String]) {
+        let header = "# TiltBlocker blocklist — one domain per line, # for comments"
+        let text = ([header] + domains).joined(separator: "\n") + "\n"
+        try? text.write(to: blocklistFile, atomically: true, encoding: .utf8)
+    }
+
     static func loadSchedule() -> Schedule {
         guard let data = try? Data(contentsOf: scheduleFile),
               let s = try? JSONDecoder().decode(Schedule.self, from: data) else {
