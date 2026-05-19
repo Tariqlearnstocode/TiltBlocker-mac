@@ -16,7 +16,7 @@ struct TiltBlockerApp: App {
         MenuBarExtra {
             ContentView()
                 .environmentObject(state)
-                .frame(width: 320)
+                .frame(width: 440)
         } label: {
             Image(systemName: state.isLocked ? "lock.fill" : "lock.open")
         }

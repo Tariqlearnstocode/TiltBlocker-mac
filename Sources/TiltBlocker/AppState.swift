@@ -23,8 +23,10 @@ final class AppState: ObservableObject {
     init() {
         Config.ensureExists()
         reloadConfig()
-        isSetUp = Keychain.get(SetupKeys.partnerEmail) != nil
-            && Keychain.get(SetupKeys.resendKey) != nil
+        // Check the local marker file instead of reading Keychain — avoids "Always Allow"
+        // prompts on every launch (Keychain re-asks whenever the app's signature changes).
+        // Keychain reads happen lazily, only when we actually need to send an email.
+        isSetUp = FileManager.default.fileExists(atPath: Config.setupMarker.path)
         helperInstalled = Blocker.isHelperInstalled()
 
         // Install the privileged helper at launch — one admin prompt, ever.
@@ -190,6 +192,7 @@ final class AppState: ObservableObject {
         Keychain.set(SetupKeys.partnerEmail, partnerEmail)
         Keychain.set(SetupKeys.resendKey, resendApiKey)
         Keychain.set(SetupKeys.resendFrom, fromAddress)
+        try? Data().write(to: Config.setupMarker)  // local marker, no Keychain read at launch
         isSetUp = true
     }
 

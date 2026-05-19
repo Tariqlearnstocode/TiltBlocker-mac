@@ -121,11 +121,27 @@ enum Blocker {
         try inPipe.fileHandleForWriting.close()
         proc.waitUntilExit()
 
+        let stderrText = String(
+            data: errPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8) ?? ""
+
         if proc.terminationStatus != 0 {
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let msg = String(data: errData, encoding: .utf8) ?? "unknown error"
             throw NSError(domain: "Blocker", code: Int(proc.terminationStatus),
-                          userInfo: [NSLocalizedDescriptionKey: msg])
+                          userInfo: [NSLocalizedDescriptionKey:
+                            "Helper exited \(proc.terminationStatus): \(stderrText.isEmpty ? "no stderr" : stderrText)"])
+        }
+
+        // Verify /etc/hosts actually reflects what we asked for.
+        // Catches silent failures where the script exits 0 but didn't write.
+        let hostsContent = (try? String(contentsOfFile: hostsPath, encoding: .utf8)) ?? ""
+        let blockPresent = hostsContent.contains(startMarker)
+        let expected = !stdinLines.isEmpty
+        if blockPresent != expected {
+            throw NSError(domain: "Blocker", code: 99, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Verification failed: /etc/hosts \(blockPresent ? "still has" : "missing") TiltBlocker block "
+                    + "(expected \(expected ? "present" : "absent")). stderr: \(stderrText)"
+            ])
         }
     }
 

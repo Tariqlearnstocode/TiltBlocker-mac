@@ -18,6 +18,7 @@ enum Config {
     static var blocklistFile: URL { dir.appendingPathComponent("blocklist.txt") }
     static var scheduleFile: URL { dir.appendingPathComponent("schedule.json") }
     static var stateFile: URL { dir.appendingPathComponent("state.json") }
+    static var setupMarker: URL { dir.appendingPathComponent("setup-complete") }
 
     static func ensureExists() {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
