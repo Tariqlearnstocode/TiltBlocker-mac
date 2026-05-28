@@ -46,6 +46,8 @@ final class AppState: ObservableObject {
         if let s = StateStore.read() {
             self.lockoutEndsAt = s.endsAt
             self.isLocked = true
+            // Sever any blocked tab that was left open before the restart/relaunch.
+            Blocker.closeBlockedTabs(domains: blocklist)
         } else {
             // Make sure /etc/hosts has no stale entries from prior runs
             if Blocker.isCurrentlyApplied() {
@@ -106,8 +108,12 @@ final class AppState: ObservableObject {
     }
 
     private func applyLock(_ lock: Bool) {
+        let wasLocked = isLocked
         do {
             try Blocker.apply(domains: lock ? blocklist : [])
+            // Only on the unlocked -> locked transition, so re-applying the hosts file
+            // (e.g. adding a domain mid-lockout) doesn't keep closing tabs repeatedly.
+            if lock && !wasLocked { Blocker.closeBlockedTabs(domains: blocklist) }
             isLocked = lock
             lastError = nil
         } catch {
@@ -143,6 +149,9 @@ final class AppState: ObservableObject {
             lastError = "Lockout failed: \(error.localizedDescription)"
             return
         }
+        // Close any already-open tabs on blocked sites — /etc/hosts only stops *new*
+        // lookups, so a live tab would otherwise keep loading until the browser restarts.
+        Blocker.closeBlockedTabs(domains: blocklist)
         let ends = Date().addingTimeInterval(TimeInterval(minutes * 60))
         lockoutEndsAt = ends
         StateStore.write(LockoutState(endsAt: ends))

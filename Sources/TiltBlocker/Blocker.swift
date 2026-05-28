@@ -172,6 +172,70 @@ enum Blocker {
         }
     }
 
+    // Scriptable browsers we can ask to close individual tabs. Best-effort:
+    // ones not running / not installed / not scriptable are silently skipped.
+    static let scriptableBrowsers = [
+        "Safari", "Google Chrome", "Brave Browser", "Microsoft Edge", "Vivaldi", "Arc",
+    ]
+
+    /// Closes only the open browser tabs pointing at a blocked domain. The browser and all
+    /// other tabs are left alone. This severs the live socket an already-open tab is holding —
+    /// /etc/hosts alone can't, since it only governs *new* DNS lookups. Reopening the site
+    /// then hits the 0.0.0.0 block. First run triggers a one-time macOS Automation prompt
+    /// per browser; if denied, this is a no-op for that browser.
+    static func closeBlockedTabs(domains: [String]) {
+        // Strict allowlist BEFORE interpolating into AppleScript — blocks script injection.
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+        let cleaned = domains
+            .map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0.allSatisfy { allowed.contains($0) } }
+        guard !cleaned.isEmpty else { return }
+        let listLiteral = cleaned.map { "\"\($0)\"" }.joined(separator: ", ")
+
+        // Off-main: the macOS Automation prompt is modal — osascript blocks until you click,
+        // and we don't want that to freeze the menu bar UI or app launch.
+        DispatchQueue.global(qos: .userInitiated).async {
+            runCloseScripts(listLiteral: listLiteral)
+        }
+    }
+
+    private static func runCloseScripts(listLiteral: String) {
+        for app in scriptableBrowsers {
+            // Match the domain in the URL's host: "//domain" (bare host) or ".domain" (www/subdomain).
+            // Iterate tabs high->low so closing one doesn't shift indices we haven't visited.
+            let script = """
+            set blocked to {\(listLiteral)}
+            if not (application "\(app)" is running) then return
+            tell application "\(app)"
+              repeat with w in windows
+                repeat with i from (count of tabs of w) to 1 by -1
+                  set u to ""
+                  try
+                    set u to (URL of tab i of w) as text
+                  end try
+                  repeat with d in blocked
+                    set ds to (d as text)
+                    if (u contains ("//" & ds)) or (u contains ("." & ds)) then
+                      try
+                        close tab i of w
+                      end try
+                      exit repeat
+                    end if
+                  end repeat
+                end repeat
+              end repeat
+            end tell
+            """
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            proc.arguments = ["-e", script]
+            proc.standardOutput = Pipe()
+            proc.standardError = Pipe()
+            try? proc.run()
+            proc.waitUntilExit()
+        }
+    }
+
     /// Quick check of whether TiltBlocker has entries in /etc/hosts right now.
     static func isCurrentlyApplied() -> Bool {
         guard let text = try? String(contentsOfFile: hostsPath, encoding: .utf8) else { return false }
