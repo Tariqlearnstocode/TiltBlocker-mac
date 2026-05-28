@@ -33,6 +33,12 @@ final class AppState: ObservableObject {
         // All future hosts edits are passwordless. If user cancels, button in UI lets them retry.
         if !helperInstalled {
             Task { @MainActor in
+                // The lockout-restore path below may have already (re)installed it
+                // synchronously — re-check so we don't fire a second admin prompt.
+                if Blocker.isHelperInstalled() {
+                    helperInstalled = true
+                    return
+                }
                 do {
                     try Blocker.installHelper()
                     helperInstalled = true
@@ -46,6 +52,9 @@ final class AppState: ObservableObject {
         if let s = StateStore.read() {
             self.lockoutEndsAt = s.endsAt
             self.isLocked = true
+            // Re-establish the block on relaunch. pf rules don't survive a reboot, and the
+            // ticker won't re-apply (it only acts on isLocked transitions), so do it here.
+            try? Blocker.apply(domains: blocklist)
             // Sever any blocked tab that was left open before the restart/relaunch.
             Blocker.closeBlockedTabs(domains: blocklist)
         } else {

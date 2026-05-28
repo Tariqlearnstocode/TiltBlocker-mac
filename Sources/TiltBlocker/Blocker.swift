@@ -7,55 +7,151 @@ enum Blocker {
     static let scriptPath = "/usr/local/bin/tiltblocker-update-hosts.sh"
     static let sudoersPath = "/etc/sudoers.d/tiltblocker"
 
-    // The bash helper. Validated input, only touches the TiltBlocker block in /etc/hosts.
-    // Installed once at /usr/local/bin/tiltblocker-update-hosts.sh and invoked via passwordless sudo.
+    // Bump when helperScript changes so installed copies get re-installed.
+    static let helperVersion = "2"
+    static let versionMarker = "# TILTBLOCKER-HELPER-VERSION:"
+
+    // The privileged bash helper. Reads "BLOCK" or "CLEAR" on line 1, then validated
+    // domains (one per line). Maintains BOTH the TILTBLOCKER block in /etc/hosts and a
+    // pf firewall anchor that drops traffic to the domains' resolved IPs.
+    //
+    // Why pf as well: /etc/hosts only governs the system resolver. Chrome (and other
+    // Chromium browsers) keep their own in-process DNS cache, so a domain that was just
+    // open resolves from that cache and connects directly, ignoring /etc/hosts entirely.
+    // pf blocks at the IP layer — it doesn't care how the address was resolved.
+    // Installed at scriptPath, invoked via passwordless sudo.
     private static let helperScript = #"""
     #!/bin/bash
-    # TiltBlocker hosts updater. Reads validated domains from stdin (one per line),
-    # rewrites only the TILTBLOCKER block in /etc/hosts, flushes DNS. Refuses everything else.
-    set -euo pipefail
+    # TILTBLOCKER-HELPER-VERSION: 2
+    set -uo pipefail
 
     HOSTS=/etc/hosts
     START_MARKER="# === TILTBLOCKER START ==="
     END_MARKER="# === TILTBLOCKER END ==="
-    TMP="$(mktemp)"
-    trap 'rm -f "$TMP"' EXIT
+    ANCHOR="tiltblocker"
+    PF_RULES="/etc/pf.anchors/tiltblocker.rules"
+    PF_MAIN="/etc/pf.anchors/tiltblocker.conf"
+    PF_STATE="/var/db/tiltblocker.pf-was-enabled"
+    DIG=/usr/bin/dig
+    PFCTL=/sbin/pfctl
+
+    read -r MODE || MODE=""
 
     DOMAINS=()
     while IFS= read -r line; do
-        # Strict allowlist: lowercase/upper alphanum, dots, hyphens. Max length 253 (DNS limit).
+        # Strict allowlist: alphanum, dots, hyphens. Max length 253 (DNS limit).
         if [[ "$line" =~ ^[a-zA-Z0-9.-]+$ ]] && [ ${#line} -le 253 ]; then
             DOMAINS+=("$line")
         fi
     done
 
-    # Strip any existing TiltBlocker block
-    /usr/bin/awk -v start="$START_MARKER" -v end="$END_MARKER" '
-        $0 == start { skip=1; next }
-        $0 == end { skip=0; next }
-        skip != 1 { print }
-    ' "$HOSTS" > "$TMP"
+    strip_hosts_block() {
+        local tmp; tmp="$(mktemp)"
+        /usr/bin/awk -v s="$START_MARKER" -v e="$END_MARKER" '
+            $0==s{skip=1;next} $0==e{skip=0;next} skip!=1{print}' "$HOSTS" > "$tmp"
+        cat "$tmp" > "$HOSTS"
+        rm -f "$tmp"
+    }
 
-    # Append fresh block if any domains supplied
-    if [ ${#DOMAINS[@]} -gt 0 ]; then
+    flush_dns() {
+        /usr/bin/dscacheutil -flushcache 2>/dev/null || true
+        /usr/bin/killall -HUP mDNSResponder 2>/dev/null || true
+    }
+
+    do_block() {
+        strip_hosts_block
+        if [ ${#DOMAINS[@]} -eq 0 ]; then
+            flush_dns
+            return 0
+        fi
+
+        # 1) /etc/hosts block (covers Safari + anything using the system resolver).
         {
             echo "$START_MARKER"
-            for d in "${DOMAINS[@]}"; do
-                echo "0.0.0.0 $d"
-            done
+            for d in "${DOMAINS[@]}"; do echo "0.0.0.0 $d"; done
             echo "$END_MARKER"
-        } >> "$TMP"
-    fi
+        } >> "$HOSTS"
+        flush_dns
 
-    cat "$TMP" > "$HOSTS"
+        # 2) Resolve REAL IPs via external resolvers. dig never consults /etc/hosts,
+        #    so this returns the true addresses even with the 0.0.0.0 block in place.
+        local all=""
+        for d in "${DOMAINS[@]}"; do
+            all="$all
+    $("$DIG" +short +time=2 +tries=1 @1.1.1.1 "$d" A 2>/dev/null)
+    $("$DIG" +short +time=2 +tries=1 @8.8.8.8 "$d" A 2>/dev/null)"
+        done
+        local ips
+        ips="$(printf "%s\n" "$all" | /usr/bin/grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)"
 
-    /usr/bin/dscacheutil -flushcache
-    /usr/bin/killall -HUP mDNSResponder 2>/dev/null || true
+        # 3) pf anchor rules — drop everything to those IPs.
+        : > "$PF_RULES"
+        if [ -n "$ips" ]; then
+            while read -r ip; do
+                echo "block drop out quick from any to $ip" >> "$PF_RULES"
+            done <<< "$ips"
+        fi
+
+        # 4) Full ruleset preserving Apple's anchors + ours, then enable & load.
+        cat > "$PF_MAIN" <<EOF
+    scrub-anchor "com.apple/*"
+    nat-anchor "com.apple/*"
+    rdr-anchor "com.apple/*"
+    dummynet-anchor "com.apple/*"
+    anchor "com.apple/*"
+    load anchor "com.apple" from "/etc/pf.anchors/com.apple"
+    anchor "$ANCHOR"
+    load anchor "$ANCHOR" from "$PF_RULES"
+    EOF
+
+        # Remember whether pf was already on (once), so CLEAR won't disable someone else's pf.
+        if [ ! -f "$PF_STATE" ]; then
+            if "$PFCTL" -s info 2>/dev/null | /usr/bin/grep -q "Status: Enabled"; then
+                echo yes > "$PF_STATE"
+            else
+                echo no > "$PF_STATE"
+            fi
+        fi
+        "$PFCTL" -f "$PF_MAIN" 2>/dev/null || true
+        "$PFCTL" -e 2>/dev/null || true
+
+        # 5) Sever live connections to those IPs so cached sockets can't keep loading.
+        if [ -n "$ips" ]; then
+            while read -r ip; do
+                "$PFCTL" -k "$ip" 2>/dev/null || true
+            done <<< "$ips"
+        fi
+        return 0
+    }
+
+    do_clear() {
+        strip_hosts_block
+        flush_dns
+        "$PFCTL" -a "$ANCHOR" -F rules 2>/dev/null || true
+        "$PFCTL" -f /etc/pf.conf 2>/dev/null || true
+        # Only disable pf if we were the ones who turned it on.
+        if [ -f "$PF_STATE" ] && /usr/bin/grep -q no "$PF_STATE"; then
+            "$PFCTL" -d 2>/dev/null || true
+        fi
+        rm -f "$PF_STATE" "$PF_RULES" "$PF_MAIN"
+        return 0
+    }
+
+    case "$MODE" in
+        BLOCK) do_block ;;
+        CLEAR) do_clear ;;
+        *) echo "tiltblocker: unknown mode '$MODE'" >&2; exit 1 ;;
+    esac
+    exit 0
     """#
 
     static func isHelperInstalled() -> Bool {
-        FileManager.default.fileExists(atPath: scriptPath)
-            && FileManager.default.fileExists(atPath: sudoersPath)
+        guard FileManager.default.fileExists(atPath: scriptPath),
+              FileManager.default.fileExists(atPath: sudoersPath),
+              let contents = try? String(contentsOfFile: scriptPath, encoding: .utf8)
+        else { return false }
+        // Treat an out-of-date helper as "not installed" so it gets re-installed.
+        return contents.contains("\(versionMarker) \(helperVersion)")
     }
 
     /// Installs the helper script + sudoers entry. Triggers a single osascript admin prompt.
@@ -103,7 +199,9 @@ enum Blocker {
                 stdinLines.append("www.\(clean)")
             }
         }
-        let stdin = stdinLines.joined(separator: "\n") + "\n"
+        // Line 1 is the mode; the helper applies hosts + pf for BLOCK, tears both down for CLEAR.
+        let mode = stdinLines.isEmpty ? "CLEAR" : "BLOCK"
+        let stdin = ([mode] + stdinLines).joined(separator: "\n") + "\n"
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
