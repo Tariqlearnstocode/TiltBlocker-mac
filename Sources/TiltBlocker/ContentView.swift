@@ -190,8 +190,10 @@ private struct StatusTab: View {
                     customDurationRow
                 } else {
                     durationGrid
-                    primaryLockCTA(label: "Lock myself out",
-                                   detail: prettyDuration(durationMinutes)) {
+                    primaryLockCTA(label: state.isLocking ? "Locking…" : "Lock myself out",
+                                   detail: prettyDuration(durationMinutes),
+                                   busy: state.isLocking,
+                                   disabled: state.isLocking) {
                         state.startManualLockout(minutes: durationMinutes)
                     }
                 }
@@ -239,10 +241,13 @@ private struct StatusTab: View {
                     showCustom = false; customHours = ""; customMinutes = ""
                 }
                 accentLockButton(
-                    label: totalCustomMinutes() > 0
-                        ? "Lock for \(prettyDuration(totalCustomMinutes()))"
-                        : "Enter time",
-                    disabled: totalCustomMinutes() == 0,
+                    label: state.isLocking
+                        ? "Locking…"
+                        : (totalCustomMinutes() > 0
+                            ? "Lock for \(prettyDuration(totalCustomMinutes()))"
+                            : "Enter time"),
+                    busy: state.isLocking,
+                    disabled: totalCustomMinutes() == 0 || state.isLocking,
                     action: commitCustomLockout
                 )
             }
@@ -267,11 +272,15 @@ private struct StatusTab: View {
         }
     }
 
-    private func primaryLockCTA(label: String, detail: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+    private func primaryLockCTA(label: String, detail: String, busy: Bool = false, disabled: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                if busy {
+                    ProgressView().controlSize(.small).tint(.white)
+                } else {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                }
                 Text(label)
                     .font(.system(size: 14.5, weight: .semibold))
                 Spacer()
@@ -298,10 +307,14 @@ private struct StatusTab: View {
         .disabled(disabled)
     }
 
-    private func accentLockButton(label: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+    private func accentLockButton(label: String, busy: Bool = false, disabled: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                Image(systemName: "lock.fill").font(.system(size: 12, weight: .semibold))
+                if busy {
+                    ProgressView().controlSize(.small).tint(.white)
+                } else {
+                    Image(systemName: "lock.fill").font(.system(size: 12, weight: .semibold))
+                }
                 Text(label).font(.system(size: 13, weight: .semibold))
             }
             .foregroundColor(.white)
@@ -365,6 +378,13 @@ private struct StatusTab: View {
 private struct BlocklistTab: View {
     @EnvironmentObject var state: AppState
     @State private var newDomain = ""
+    @State private var searchText = ""
+
+    private var filteredDomains: [String] {
+        let q = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return state.blocklist }
+        return state.blocklist.filter { $0.lowercased().contains(q) }
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -417,10 +437,20 @@ private struct BlocklistTab: View {
                         }
                     }
 
+                    if !state.blocklist.isEmpty {
+                        InputField(placeholder: "Search sites…", text: $searchText, onCommit: {})
+                    }
+
                     if state.blocklist.isEmpty {
                         emptyState
+                    } else if filteredDomains.isEmpty {
+                        Text("No results for \"\(searchText)\"")
+                            .font(.tbCaption(11))
+                            .foregroundColor(.tbTextMuted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
                     } else {
-                        domainGrid
+                        domainGrid(filteredDomains)
                     }
                 }
             }
@@ -441,10 +471,10 @@ private struct BlocklistTab: View {
         .padding(.vertical, 22)
     }
 
-    private var domainGrid: some View {
+    private func domainGrid(_ domains: [String]) -> some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8),
                             GridItem(.flexible(), spacing: 8)], spacing: 6) {
-            ForEach(state.blocklist, id: \.self) { d in
+            ForEach(domains, id: \.self) { d in
                 HStack(spacing: 6) {
                     Image(systemName: "globe")
                         .font(.system(size: 10, weight: .semibold))
@@ -468,7 +498,7 @@ private struct BlocklistTab: View {
                     }
                 }
                 .padding(.horizontal, 9).padding(.vertical, 7)
-                .background(Color.white)
+                .background(Color.tbCardBgHi)
                 .cornerRadius(8)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.tbBorder, lineWidth: 1))
             }

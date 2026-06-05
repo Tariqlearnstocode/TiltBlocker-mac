@@ -8,7 +8,7 @@ enum Blocker {
     static let sudoersPath = "/etc/sudoers.d/tiltblocker"
 
     // Bump when helperScript changes so installed copies get re-installed.
-    static let helperVersion = "2"
+    static let helperVersion = "3"
     static let versionMarker = "# TILTBLOCKER-HELPER-VERSION:"
 
     // The privileged bash helper. Reads "BLOCK" or "CLEAR" on line 1, then validated
@@ -22,7 +22,7 @@ enum Blocker {
     // Installed at scriptPath, invoked via passwordless sudo.
     private static let helperScript = #"""
     #!/bin/bash
-    # TILTBLOCKER-HELPER-VERSION: 2
+    # TILTBLOCKER-HELPER-VERSION: 3
     set -uo pipefail
 
     HOSTS=/etc/hosts
@@ -58,20 +58,29 @@ enum Blocker {
         /usr/bin/killall -HUP mDNSResponder 2>/dev/null || true
     }
 
-    do_block() {
+    # FAST path: just the /etc/hosts block. No DNS lookups, returns near-instantly so the
+    # app can mark the lockout active immediately. Covers Safari + the system resolver.
+    do_hosts() {
         strip_hosts_block
         if [ ${#DOMAINS[@]} -eq 0 ]; then
             flush_dns
             return 0
         fi
-
-        # 1) /etc/hosts block (covers Safari + anything using the system resolver).
         {
             echo "$START_MARKER"
             for d in "${DOMAINS[@]}"; do echo "0.0.0.0 $d"; done
             echo "$END_MARKER"
         } >> "$HOSTS"
         flush_dns
+        return 0
+    }
+
+    # SLOW path: pf firewall hardening. Does live DNS lookups + pfctl, so it runs in the
+    # background AFTER the hosts block is already in force. Catches Chromium DNS-cache bypass.
+    do_pf() {
+        if [ ${#DOMAINS[@]} -eq 0 ]; then
+            return 0
+        fi
 
         # 2) Resolve REAL IPs via external resolvers. dig never consults /etc/hosts,
         #    so this returns the true addresses even with the 0.0.0.0 block in place.
@@ -137,7 +146,16 @@ enum Blocker {
         return 0
     }
 
+    # Full block in one call (hosts + pf). Used for launch-time restore.
+    do_block() {
+        do_hosts
+        do_pf
+        return 0
+    }
+
     case "$MODE" in
+        HOSTS) do_hosts ;;
+        PF)    do_pf ;;
         BLOCK) do_block ;;
         CLEAR) do_clear ;;
         *) echo "tiltblocker: unknown mode '$MODE'" >&2; exit 1 ;;
@@ -180,9 +198,30 @@ enum Blocker {
         try runAsAdmin(script: installScript)
     }
 
-    /// Apply (or clear) the blocklist to /etc/hosts. Empty domains = clear.
-    /// Uses the passwordless sudo helper if installed; otherwise installs the helper first.
+    /// Full block (or clear) in one helper call — both /etc/hosts and the pf firewall.
+    /// Empty domains = clear. Used for launch-time restore where one synchronous call is fine.
     static func apply(domains: [String]) throws {
+        try runHelper(mode: "BLOCK", domains: domains, verifyHosts: true)
+    }
+
+    /// FAST: apply only the /etc/hosts block (no DNS lookups). Returns near-instantly so the
+    /// lockout can be marked active immediately. Empty domains = clear. Verifies /etc/hosts.
+    static func applyHosts(domains: [String]) throws {
+        try runHelper(mode: "HOSTS", domains: domains, verifyHosts: true)
+    }
+
+    /// SLOW: apply only the pf firewall hardening (live DNS lookups + pfctl). Meant to run in
+    /// the background after applyHosts. Does not touch /etc/hosts, so no hosts verification.
+    static func applyFirewall(domains: [String]) throws {
+        try runHelper(mode: "PF", domains: domains, verifyHosts: false)
+    }
+
+    /// Core helper invocation. `mode` is the requested mode (HOSTS / PF / BLOCK); it is
+    /// downgraded to CLEAR automatically when there are no domains. `verifyHosts` re-reads
+    /// /etc/hosts afterward to catch silent write failures (only meaningful for modes that
+    /// touch the hosts file).
+    /// Uses the passwordless sudo helper if installed; otherwise installs the helper first.
+    private static func runHelper(mode: String, domains: [String], verifyHosts: Bool) throws {
         if !isHelperInstalled() {
             try installHelper()
         }
@@ -199,9 +238,9 @@ enum Blocker {
                 stdinLines.append("www.\(clean)")
             }
         }
-        // Line 1 is the mode; the helper applies hosts + pf for BLOCK, tears both down for CLEAR.
-        let mode = stdinLines.isEmpty ? "CLEAR" : "BLOCK"
-        let stdin = ([mode] + stdinLines).joined(separator: "\n") + "\n"
+        // Line 1 is the mode. No domains → CLEAR tears everything down regardless of `mode`.
+        let effectiveMode = stdinLines.isEmpty ? "CLEAR" : mode
+        let stdin = ([effectiveMode] + stdinLines).joined(separator: "\n") + "\n"
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
@@ -228,6 +267,8 @@ enum Blocker {
                           userInfo: [NSLocalizedDescriptionKey:
                             "Helper exited \(proc.terminationStatus): \(stderrText.isEmpty ? "no stderr" : stderrText)"])
         }
+
+        guard verifyHosts else { return }
 
         // Verify /etc/hosts actually reflects what we asked for.
         // Catches silent failures where the script exits 0 but didn't write.

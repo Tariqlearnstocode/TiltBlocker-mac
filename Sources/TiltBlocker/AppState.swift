@@ -18,6 +18,11 @@ final class AppState: ObservableObject {
     @Published var pendingCodeIssuedAt: Date? = nil
     private var pendingCodeHash: String? = nil
 
+    // True while a manual lockout is being applied (the privileged helper runs DNS
+    // lookups + pfctl, which can take several seconds). Drives an intentional spinner
+    // so the UI stays responsive instead of beachballing on the main thread.
+    @Published var isLocking: Bool = false
+
     private var tick: Timer?
 
     init() {
@@ -54,7 +59,13 @@ final class AppState: ObservableObject {
             self.isLocked = true
             // Re-establish the block on relaunch. pf rules don't survive a reboot, and the
             // ticker won't re-apply (it only acts on isLocked transitions), so do it here.
-            try? Blocker.apply(domains: blocklist)
+            // Hosts block synchronously (fast) for immediate effect; pf hardening in the
+            // background so app launch isn't blocked on DNS lookups.
+            let restoreDomains = blocklist
+            try? Blocker.applyHosts(domains: restoreDomains)
+            Task.detached(priority: .utility) {
+                try? Blocker.applyFirewall(domains: restoreDomains)
+            }
             // Sever any blocked tab that was left open before the restart/relaunch.
             Blocker.closeBlockedTabs(domains: blocklist)
         } else {
@@ -150,22 +161,40 @@ final class AppState: ObservableObject {
     }
 
     func startManualLockout(minutes: Int) {
-        // Apply hosts FIRST. If the admin auth fails / user cancels, we must not
-        // pretend the lockout is active — UI state and /etc/hosts would diverge.
-        do {
-            try Blocker.apply(domains: blocklist)
-        } catch {
-            lastError = "Lockout failed: \(error.localizedDescription)"
-            return
-        }
-        // Close any already-open tabs on blocked sites — /etc/hosts only stops *new*
-        // lookups, so a live tab would otherwise keep loading until the browser restarts.
-        Blocker.closeBlockedTabs(domains: blocklist)
-        let ends = Date().addingTimeInterval(TimeInterval(minutes * 60))
-        lockoutEndsAt = ends
-        StateStore.write(LockoutState(endsAt: ends))
-        isLocked = true
+        guard !isLocking else { return }
+        isLocking = true
         lastError = nil
+        let domains = blocklist
+
+        Task {
+            // 1) FAST: apply only the /etc/hosts block. No DNS lookups, returns near-instantly.
+            //    This is what makes the lockout effective, so the timer can start right away.
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try Blocker.applyHosts(domains: domains)
+                }.value
+            } catch {
+                isLocking = false
+                lastError = "Lockout failed: \(error.localizedDescription)"
+                return
+            }
+
+            // 2) Lock is in force — flip the UI and start the countdown immediately.
+            let ends = Date().addingTimeInterval(TimeInterval(minutes * 60))
+            lockoutEndsAt = ends
+            StateStore.write(LockoutState(endsAt: ends))
+            isLocked = true
+            isLocking = false
+            lastError = nil
+
+            // 3) SLOW, in the background: pf firewall hardening (catches Chromium DNS-cache
+            //    bypass) + close any live tabs already on a blocked site. The lockout is
+            //    already active via /etc/hosts, so the user never waits on this.
+            Task.detached(priority: .utility) {
+                try? Blocker.applyFirewall(domains: domains)
+            }
+            Blocker.closeBlockedTabs(domains: domains)
+        }
     }
 
     func endLockoutWithPassword(_ code: String) -> Bool {
