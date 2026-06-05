@@ -735,6 +735,7 @@ private struct LockedView: View {
     @EnvironmentObject var state: AppState
     @State private var showEmergency = false
     @State private var showAllSites = false
+    @State private var newDomain = ""
 
     var body: some View {
         ZStack {
@@ -890,8 +891,37 @@ private struct LockedView: View {
                         .font(.tbCaption(11).weight(.semibold))
                         .foregroundColor(.tbTextMuted)
                 }
+
+                Rectangle().fill(Color.tbBorder.opacity(0.6)).frame(height: 1)
+                    .padding(.vertical, 2)
+
+                // Adding mid-lockout is allowed (only *removing* is blocked) — lets you
+                // plug a gap the moment you notice one without waiting out the timer.
+                HStack(spacing: 6) {
+                    InputField(placeholder: "Add a site to block…",
+                               text: $newDomain,
+                               onCommit: commitAdd)
+                    Button("Add") { commitAdd() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(
+                            newDomain.trimmingCharacters(in: .whitespaces).isEmpty
+                            ? AnyView(Color.tbAccent.opacity(0.4))
+                            : AnyView(LinearGradient.tbAccentFill)
+                        )
+                        .cornerRadius(8)
+                        .disabled(newDomain.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
         }
+    }
+
+    private func commitAdd() {
+        let d = newDomain.trimmingCharacters(in: .whitespaces)
+        guard !d.isEmpty else { return }
+        state.addDomain(d); newDomain = ""
     }
 
     private var emergencyCard: some View {

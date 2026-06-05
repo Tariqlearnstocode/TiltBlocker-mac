@@ -150,7 +150,25 @@ final class AppState: ObservableObject {
         guard !clean.isEmpty, !blocklist.contains(clean) else { return }
         blocklist.append(clean)
         Config.saveBlocklist(blocklist)
-        if isLocked { applyLock(true) }  // re-applies hosts with the new domain included
+        // Re-apply with the new domain included, mid-lockout. Use the fast hosts write so the
+        // UI doesn't freeze; harden pf in the background. (Adding mid-lockout is allowed —
+        // only *removing* is blocked.)
+        if isLocked {
+            let domains = blocklist
+            Task {
+                do {
+                    try await Task.detached(priority: .userInitiated) {
+                        try Blocker.applyHosts(domains: domains)
+                    }.value
+                    lastError = nil
+                } catch {
+                    lastError = "Block failed: \(error.localizedDescription)"
+                }
+                Task.detached(priority: .utility) {
+                    try? Blocker.applyFirewall(domains: domains)
+                }
+            }
+        }
     }
 
     /// Removing is disabled during an active lockout — that would be a trivial bypass.
