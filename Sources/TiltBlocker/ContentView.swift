@@ -768,6 +768,7 @@ private struct LockedView: View {
                 ScrollView {
                     VStack(spacing: 12) {
                         timerCard
+                        extendCard
                         statsRow
                         if !state.blocklist.isEmpty { blockedSitesCard }
                         emergencyCard
@@ -837,6 +838,38 @@ private struct LockedView: View {
         }
         .frame(maxWidth: .infinity)
         .shadow(color: Color.tbAccent.opacity(0.25), radius: 10, y: 4)
+    }
+
+    // MARK: Extend card
+
+    // Extending is one-directional — you can only ever add time, never cut it short —
+    // so it's safe to expose mid-lockout. Useful when you decide you need longer than
+    // you first committed to.
+    private let extendPresets: [(label: String, minutes: Int)] = [
+        ("+15m", 15), ("+30m", 30), ("+1h", 60), ("+2h", 120)
+    ]
+
+    private var extendCard: some View {
+        CardSurface(padding: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(icon: "hourglass", title: "Need more time?", iconColor: .tbAccent)
+                HStack(spacing: 6) {
+                    ForEach(extendPresets, id: \.minutes) { preset in
+                        Button { state.extendLockout(minutes: preset.minutes) } label: {
+                            Text(preset.label)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.tbAccentHi)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.tbBgSubtle)
+                                .cornerRadius(8)
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.tbBorder, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
     }
 
     private var statsRow: some View {

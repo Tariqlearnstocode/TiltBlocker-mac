@@ -215,6 +215,19 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Push the lockout end time further out. Extending is always allowed mid-lockout —
+    /// it only ever *adds* time, so it can't be used as a bypass. The block itself is
+    /// already in force, so there's nothing to re-apply: we just move the deadline and
+    /// persist it. Counts from the current end time so stacking extensions adds up.
+    func extendLockout(minutes: Int) {
+        guard isLocked, minutes > 0 else { return }
+        let base = lockoutEndsAt ?? Date()
+        let ends = base.addingTimeInterval(TimeInterval(minutes * 60))
+        lockoutEndsAt = ends
+        StateStore.write(LockoutState(endsAt: ends))
+        lastError = nil
+    }
+
     func endLockoutWithPassword(_ code: String) -> Bool {
         guard let hash = pendingCodeHash else { return false }
         guard Hash.verify(code, against: hash) else { return false }
