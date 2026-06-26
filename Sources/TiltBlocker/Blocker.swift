@@ -212,6 +212,16 @@ enum Blocker {
 
     /// SLOW: apply only the pf firewall hardening (live DNS lookups + pfctl). Meant to run in
     /// the background after applyHosts. Does not touch /etc/hosts, so no hosts verification.
+    ///
+    /// DESIGN NOTE (2026-06-26): this blocks every resolved IP, including shared-hosting IPs
+    /// (Wix 185.230.63.0/24, Vercel 76.76.21.0/24 + 216.150.0.0/16, etc.). That means blocking
+    /// a domain on shared hosting also blocks unrelated sites on the same IP — e.g. blocking
+    /// legendstrading.com (Wix) once took down greatlakespmg.com (also Wix).
+    /// This is INTENTIONAL and must stay this way: a tilt site leaking through because we
+    /// skipped its shared IP can cost hundreds/thousands; an innocent co-hosted site getting
+    /// caught in the crossfire is just a minor annoyance. Do NOT add shared-IP allow-listing.
+    /// If a co-hosted site you care about gets blocked, remove the offending domain from the
+    /// blocklist instead (see the warning header in ~/.tiltblocker/blocklist.txt).
     static func applyFirewall(domains: [String]) throws {
         try runHelper(mode: "PF", domains: domains, verifyHosts: false)
     }
